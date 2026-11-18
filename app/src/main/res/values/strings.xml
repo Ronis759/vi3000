@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VI3000</string>
+
+    <string name="error_title">Не удалось загрузить VI3000</string>
+    <string name="error_text">Проверьте подключение к интернету\nи попробуйте снова.</string>
+    <string name="error_retry">Повторить</string>
+
+    <string name="exit_title">Выход</string>
+    <string name="exit_text">Закрыть VI3000?</string>
+    <string name="exit_yes">Выйти</string>
+    <string name="exit_no">Отмена</string>
+
+    <string name="download_started">Загрузка началась</string>
+    <string name="download_error">Не удалось начать загрузку</string>
+    <string name="app_not_found">Подходящее приложение не найдено</string>
+    <string name="file_chooser_title">Выберите файл</string>
+
+    <string name="player_error">Не удалось воспроизвести видео</string>
+    <string name="player_retry">Повторить</string>
+</resources>

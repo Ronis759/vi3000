@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Локальные настройки
+local.properties
+keystore.properties
+keystore/*.jks
+keystore/*.keystore
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Прочее
+captures/
+.externalNativeBuild/
+.cxx/

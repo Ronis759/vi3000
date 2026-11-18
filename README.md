@@ -1,0 +1,92 @@
+# VI3000 для Android TV
+
+Android-приложение-оболочка для сайта [vi3000.top](https://vi3000.top/). Открывает каталог в WebView и добавляет то, чего не хватает браузеру на телевизоре: управление пультом, нативный видеоплеер, корректный выход и нормальный полноэкранный режим.
+
+Приложение не содержит видео и не является официальным клиентом сайта. Все материалы открываются с vi3000.top.
+
+## Возможности
+
+- **Android TV**: баннер в лаунчере, запуск с пульта, стрелки/OK/Back без мыши.
+- **Нативный плеер** (ExoPlayer/Media3): HLS, DASH, MP4, MKV; поддержка Referer и cookies.
+- **Настройки Lampa**: на ТВ включается режим пульта, на телефоне — сенсорный.
+- **Нативные HTTP-запросы** для API сайта (`AndroidJS.httpReq`).
+- Полноэкранное видео, выбор файлов, загрузки, внешние ссылки (`magnet:`, `tg:`, `mailto:` и т.п.).
+- Экран ошибки с кнопкой «Повторить», сохранение cookies и состояния WebView.
+
+## Скачать APK
+
+1. Откройте вкладку **Releases** этого репозитория.
+2. Скачайте `VI3000-*.apk` из последнего релиза.
+3. Установите на приставку.
+
+Либо скачайте APK из артефактов последнего запуска **Actions** (раздел Actions → Build APK → Artifacts).
+
+## Установка на ТВ-приставку
+
+1. Разрешите установку из неизвестных источников: **Настройки → Безопасность → Неизвестные источники**.
+2. Передайте APK на приставку удобным способом:
+   - через флешку;
+   - через приложение «Send files to TV»;
+   - через `adb install VI3000.apk`.
+3. Откройте **VI3000** в списке приложений.
+4. Управляйте пультом: стрелки — навигация, OK — выбор, Back — назад/выход.
+
+## Сборка вручную
+
+Нужны JDK 17 и Android SDK 35.
+
+```bash
+./gradlew assembleDebug
+```
+
+Готовый APK: `app/build/outputs/apk/debug/app-debug.apk`.
+
+Для release-сборки создайте в корне `keystore.properties`:
+
+```properties
+storeFile=keystore/vi3000-release.jks
+storePassword=...
+keyAlias=vi3000
+keyPassword=...
+```
+
+и выполните:
+
+```bash
+./gradlew assembleRelease
+```
+
+APK появится в `app/build/outputs/apk/release/app-release.apk`.
+
+## GitHub Actions
+
+Workflow `.github/workflows/android.yml` собирает APK при каждом пуше в `main`, по тегу `v*` и вручную.
+
+Чтобы APK подписывался постоянным ключом, добавьте в **Settings → Secrets and variables → Actions**:
+
+| Секрет | Значение |
+| --- | --- |
+| `KEYSTORE_BASE64` | keystore в base64 (`base64 -w0 keystore/vi3000-release.jks`) |
+| `KEYSTORE_PASSWORD` | пароль хранилища |
+| `KEY_ALIAS` | `vi3000` |
+| `KEY_PASSWORD` | пароль ключа |
+
+Если секреты не заданы, APK соберётся с debug-подписью. Такой файл устанавливается, но обновить им уже установленное приложение не получится — подпись меняется.
+
+Релиз создаётся автоматически при пуше тега:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+## Структура
+
+```
+app/src/main/java/top/vi3000/app/
+  MainActivity.java    — WebView, пульт, загрузки, настройки Lampa
+  AndroidBridge.java   — мост AndroidJS для сайта
+  PlayerActivity.java  — нативный плеер Media3
+app/src/main/res/      — иконки, ТВ-баннер, экраны
+tools/make_icons.ps1   — генерация иконок и баннера из brand/logo.png
+```
