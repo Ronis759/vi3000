@@ -24,8 +24,8 @@ android {
         applicationId = "top.vi3000.app"
         minSdk = 23
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.2"
+        versionCode = 3
+        versionName = "1.1.0"
     }
 
     signingConfigs {
@@ -58,6 +58,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.core:core:1.13.1")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 
     // Встроенный видеоплеер для ссылок, которые сайт открывает «наружу»

@@ -17,8 +17,11 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -87,6 +90,11 @@ public class MainActivity extends Activity {
     /** Телевизор или ТВ-приставка: управление пультом, без сенсорного режима. */
     private boolean isTelevision;
 
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private boolean menuLongPressPending;
+    private final Runnable menuLongPressRunnable = this::showAppMenu;
+    private boolean forceUpdateForTest;
+
     /** Ответы нативного HTTP-моста для Lampa: индекс запроса → тело ответа. */
     private final Map<Integer, String> httpResponses = new ConcurrentHashMap<>();
     private ExecutorService httpExecutor;
@@ -107,6 +115,8 @@ public class MainActivity extends Activity {
                 && getIntent().getBooleanExtra("force_tv", false)) {
             isTelevision = true;
         }
+        forceUpdateForTest = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                && getIntent().getBooleanExtra("force_update", false);
 
         setContentView(R.layout.activity_main);
 
@@ -156,45 +166,128 @@ public class MainActivity extends Activity {
         scheduleUpdateCheck();
     }
 
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (!menuLongPressPending) {
+                    menuLongPressPending = true;
+                    handler.postDelayed(menuLongPressRunnable, 350);
+                }
+                return true;
+            }
+            if (event.getAction() == KeyEvent.ACTION_UP) {
+                handler.removeCallbacks(menuLongPressRunnable);
+                menuLongPressPending = false;
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private void showAppMenu() {
+        String[] items = {"Проверить обновление", "О приложении"};
+        new AlertDialog.Builder(this)
+                .setTitle("VI3000")
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        manualUpdateCheck();
+                    } else {
+                        showAboutDialog();
+                    }
+                })
+                .show();
+    }
+
+    private void showAboutDialog() {
+        String version;
+        try {
+            version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            version = "?";
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("VI3000")
+                .setMessage("Версия " + version + "\n\n"
+                        + "Оболочка для vi3000.top, оптимизированная для Android TV.\n\n"
+                        + "Исходный код: github.com/Ronis759/vi3000")
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private String currentVersionName() {
+        try {
+            String version = getPackageManager()
+                    .getPackageInfo(getPackageName(), 0).versionName;
+            return version == null ? "" : version;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void manualUpdateCheck() {
+        Toast.makeText(this, "Проверяем обновления…", Toast.LENGTH_SHORT).show();
+        new UpdateChecker(currentVersionName(), new UpdateChecker.Listener() {
+            @Override
+            public void onUpdateAvailable(String version, String releaseUrl, String apkUrl) {
+                showUpdateDialog(version, releaseUrl, apkUrl);
+            }
+
+            @Override
+            public void onNoUpdate() {
+                Toast.makeText(MainActivity.this, "У вас актуальная версия", Toast.LENGTH_LONG).show();
+            }
+
+            @Override
+            public void onCheckError() {
+                Toast.makeText(MainActivity.this, "Не удалось проверить обновление", Toast.LENGTH_LONG).show();
+            }
+        }).check(forceUpdateForTest);
+    }
+
     private void scheduleUpdateCheck() {
         SharedPreferences prefs = getSharedPreferences("vi3000_updates", MODE_PRIVATE);
-        boolean force = getIntent().getBooleanExtra("force_update", false)
-                && (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         long lastCheck = prefs.getLong("last_check", 0L);
-        if (!force && System.currentTimeMillis() - lastCheck < 6L * 60L * 60L * 1000L) {
+        if (!forceUpdateForTest
+                && System.currentTimeMillis() - lastCheck < 6L * 60L * 60L * 1000L) {
             return;
         }
         prefs.edit().putLong("last_check", System.currentTimeMillis()).apply();
 
-        String currentVersion;
-        try {
-            currentVersion = getPackageManager()
-                    .getPackageInfo(getPackageName(), 0).versionName;
-        } catch (Exception e) {
-            currentVersion = "";
-        }
-        if (currentVersion == null) {
-            currentVersion = "";
-        }
-
-        new UpdateChecker(currentVersion, (version, url) -> {
-            String skipped = prefs.getString("skipped_version", "");
-            if (!force && version.equals(skipped)) {
-                return;
+        new UpdateChecker(currentVersionName(), new UpdateChecker.Listener() {
+            @Override
+            public void onUpdateAvailable(String version, String releaseUrl, String apkUrl) {
+                String skipped = prefs.getString("skipped_version", "");
+                if (!forceUpdateForTest && version.equals(skipped)) {
+                    return;
+                }
+                showUpdateDialog(version, releaseUrl, apkUrl);
             }
-            showUpdateDialog(version, url);
-        }).check(force);
+
+            @Override
+            public void onNoUpdate() {
+            }
+
+            @Override
+            public void onCheckError() {
+            }
+        }).check(forceUpdateForTest);
     }
 
-    private void showUpdateDialog(String version, String url) {
+    private void showUpdateDialog(String version, String releaseUrl, String apkUrl) {
         SharedPreferences prefs = getSharedPreferences("vi3000_updates", MODE_PRIVATE);
-        AlertDialog dialog = new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this)
                 .setTitle("Доступно обновление")
                 .setMessage("Версия " + version + " уже выложена на GitHub.\n\n"
-                        + "Откройте страницу релиза и установите APK вручную.")
-                .setPositiveButton("Открыть Release", (d, which) -> {
+                        + "Можно скачать APK и установить его сразу, "
+                        + "или открыть страницу релиза.")
+                .setPositiveButton("Скачать и установить", (d, which) -> {
                     prefs.edit().putString("skipped_version", version).apply();
-                    openRelease(url);
+                    new UpdateInstaller(this).downloadAndInstall(apkUrl, version);
+                })
+                .setNeutralButton("Открыть страницу", (d, which) -> {
+                    prefs.edit().putString("skipped_version", version).apply();
+                    openRelease(releaseUrl);
                 })
                 .setNegativeButton("Позже", (d, which) -> {
                     prefs.edit().putString("skipped_version", version).apply();
@@ -204,8 +297,7 @@ public class MainActivity extends Activity {
                     prefs.edit().putString("skipped_version", version).apply();
                     webView.requestFocus();
                 })
-                .create();
-        dialog.show();
+                .show();
     }
 
     private void openRelease(String url) {

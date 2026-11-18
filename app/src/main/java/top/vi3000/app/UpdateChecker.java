@@ -4,6 +4,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -22,11 +23,17 @@ public final class UpdateChecker {
     private static final String TAG = "VI3000Update";
     private static final String API =
             "https://api.github.com/repos/Ronis759/vi3000/releases/latest";
+    private static final String SAFE_PREFIX =
+            "https://github.com/Ronis759/vi3000/releases/";
     private static final ExecutorService POOL = Executors.newSingleThreadExecutor();
     private static final Handler UI = new Handler(Looper.getMainLooper());
 
     public interface Listener {
-        void onUpdateAvailable(String version, String releaseUrl);
+        void onUpdateAvailable(String version, String releaseUrl, String apkUrl);
+
+        void onNoUpdate();
+
+        void onCheckError();
     }
 
     private final Listener listener;
@@ -37,26 +44,57 @@ public final class UpdateChecker {
         this.listener = listener;
     }
 
-    public void check(boolean force) {
+    /**
+     * @param forceVersion показывать обновление даже если версия не старше текущей
+     *                     (только для теста в debug-сборке)
+     */
+    public void check(boolean forceVersion) {
         POOL.execute(() -> {
             try {
                 String body = request();
                 JSONObject json = new JSONObject(body);
                 String tag = json.optString("tag_name", "");
-                String url = json.optString("html_url", "");
-                if (tag.isEmpty() || url.isEmpty()) {
+                String releaseUrl = json.optString("html_url", "");
+                if (tag.isEmpty() || releaseUrl.isEmpty()) {
+                    UI.post(listener::onCheckError);
                     return;
                 }
                 String version = tag.replaceFirst("^[vV]", "").trim();
-                if (!force && compare(version, currentVersion) <= 0) {
+                String apkUrl = extractApkUrl(json);
+
+                if (!forceVersion && compare(version, currentVersion) <= 0) {
+                    UI.post(listener::onNoUpdate);
                     return;
                 }
-                UI.post(() -> listener.onUpdateAvailable(version, url));
+                UI.post(() -> listener.onUpdateAvailable(version, releaseUrl, apkUrl));
             } catch (Exception e) {
-                // Нет сети, GitHub недоступен или ответ изменился — просто молча пропускаем.
-                Log.d(TAG, "update check skipped: " + e.getMessage());
+                Log.d(TAG, "update check failed: " + e.getMessage());
+                UI.post(listener::onCheckError);
             }
         });
+    }
+
+    private static String extractApkUrl(JSONObject json) {
+        JSONArray assets = json.optJSONArray("assets");
+        if (assets == null) {
+            return "";
+        }
+        for (int i = 0; i < assets.length(); i++) {
+            JSONObject asset = assets.optJSONObject(i);
+            if (asset == null) {
+                continue;
+            }
+            String url = asset.optString("browser_download_url", "");
+            String name = asset.optString("name", "");
+            if (!name.toLowerCase().endsWith(".apk")) {
+                continue;
+            }
+            // Качаем только из нашего репозитория по HTTPS.
+            if (url.startsWith(SAFE_PREFIX)) {
+                return url;
+            }
+        }
+        return "";
     }
 
     private static String request() throws IOException {
