@@ -30,6 +30,12 @@ public class AndroidBridge {
         activity.httpRequest(data, index);
     }
 
+    /** Сообщаем из страницы, что фокус пульта сейчас на значке настроек в шапке. */
+    @JavascriptInterface
+    public void onSettingsFocus(boolean focused) {
+        activity.setSettingsFocus(focused);
+    }
+
     @JavascriptInterface
     public String getResp(int index) {
         return activity.takeHttpResponse(index);

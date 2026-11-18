@@ -91,8 +91,15 @@ public class MainActivity extends Activity {
     private boolean isTelevision;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private boolean menuLongPressPending;
-    private final Runnable menuLongPressRunnable = this::showAppMenu;
+    private volatile boolean settingsFocused;
+    private boolean centerLongPressPending;
+    private boolean centerLongPressHandled;
+    private final Runnable centerLongPressRunnable = () -> {
+        if (settingsFocused) {
+            centerLongPressHandled = true;
+            showAppMenu();
+        }
+    };
     private boolean forceUpdateForTest;
 
     /** Ответы нативного HTTP-моста для Lampa: индекс запроса → тело ответа. */
@@ -168,21 +175,27 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                if (!menuLongPressPending) {
-                    menuLongPressPending = true;
-                    handler.postDelayed(menuLongPressRunnable, 350);
+                if (settingsFocused && !centerLongPressPending) {
+                    centerLongPressPending = true;
+                    handler.postDelayed(centerLongPressRunnable, 350);
                 }
-                return true;
-            }
-            if (event.getAction() == KeyEvent.ACTION_UP) {
-                handler.removeCallbacks(menuLongPressRunnable);
-                menuLongPressPending = false;
-                return true;
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                handler.removeCallbacks(centerLongPressRunnable);
+                if (centerLongPressHandled) {
+                    centerLongPressHandled = false;
+                    centerLongPressPending = false;
+                    return true;
+                }
+                centerLongPressPending = false;
             }
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    void setSettingsFocus(boolean focused) {
+        settingsFocused = focused;
     }
 
     private void showAppMenu() {
@@ -416,6 +429,7 @@ public class MainActivity extends Activity {
                 if (isTelevision) {
                     view.requestFocus();
                 }
+                injectSettingsFocusWatcher(view);
                 if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                     view.evaluateJavascript(
                             "(function(){try{return document.body.className+' | player='+localStorage.getItem('player')"
@@ -596,6 +610,23 @@ public class MainActivity extends Activity {
      * Ставим настройки оболочки до запуска скриптов сайта.
      * На ТВ включаем управление пультом, на телефоне/планшете — сенсорный режим Lampa.
      */
+    private void injectSettingsFocusWatcher(WebView view) {
+        String js = "(function(){"
+                + "if(window.__vi3000SettingsWatcher)return;"
+                + "window.__vi3000SettingsWatcher=true;"
+                + "function report(){try{"
+                + "if(!window.AndroidJS||!AndroidJS.onSettingsFocus)return;"
+                + "var el=document.querySelector('.head__action.open--settings');"
+                + "var on=!!(el&&(el.classList.contains('focus')||el===document.activeElement));"
+                + "AndroidJS.onSettingsFocus(on);"
+                + "}catch(e){}}"
+                + "var obs=new MutationObserver(report);"
+                + "obs.observe(document.documentElement,{attributes:true,subtree:true,attributeFilter:['class']});"
+                + "setInterval(report,600);report();"
+                + "})();";
+        view.evaluateJavascript(js, null);
+    }
+
     private void injectShellSettings(WebView view) {
         boolean hasTouch = getPackageManager().hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN);
         StringBuilder js = new StringBuilder("(function(){try{");
