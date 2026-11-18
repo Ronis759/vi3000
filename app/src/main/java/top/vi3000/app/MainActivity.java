@@ -194,9 +194,11 @@ public class MainActivity extends Activity {
         String userAgent = settings.getUserAgentString();
         if (userAgent != null) {
             userAgent = userAgent.replace("; wv", "").replace(" wv", "");
-            if (!userAgent.toLowerCase(Locale.ROOT).contains("lampa_client")) {
-                userAgent = userAgent + " lampa_client/3.3.15";
-            }
+            // ВАЖНО: НЕ добавляем lampa_client в UA. Сайт распознаёт этот маркер
+            // как "нативный клиент" и направляет ВСЕ запросы через httpReq —
+            // из-за этого не находятся источники фильмов. Обычный WebView-UA
+            // даёт то же поведение сети, что и PWA/браузер.
+            userAgent = userAgent.replace("lampa_client/3.3.15", "").trim();
             settings.setUserAgentString(userAgent);
             this.userAgent = userAgent;
         }
