@@ -7,6 +7,7 @@ import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -151,6 +152,77 @@ public class MainActivity extends Activity {
         if (isTelevision) {
             hideSystemUi();
         }
+
+        scheduleUpdateCheck();
+    }
+
+    private void scheduleUpdateCheck() {
+        SharedPreferences prefs = getSharedPreferences("vi3000_updates", MODE_PRIVATE);
+        boolean force = getIntent().getBooleanExtra("force_update", false)
+                && (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        long lastCheck = prefs.getLong("last_check", 0L);
+        if (!force && System.currentTimeMillis() - lastCheck < 6L * 60L * 60L * 1000L) {
+            return;
+        }
+        prefs.edit().putLong("last_check", System.currentTimeMillis()).apply();
+
+        String currentVersion;
+        try {
+            currentVersion = getPackageManager()
+                    .getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            currentVersion = "";
+        }
+        if (currentVersion == null) {
+            currentVersion = "";
+        }
+
+        new UpdateChecker(currentVersion, (version, url) -> {
+            String skipped = prefs.getString("skipped_version", "");
+            if (!force && version.equals(skipped)) {
+                return;
+            }
+            showUpdateDialog(version, url);
+        }).check(force);
+    }
+
+    private void showUpdateDialog(String version, String url) {
+        SharedPreferences prefs = getSharedPreferences("vi3000_updates", MODE_PRIVATE);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Доступно обновление")
+                .setMessage("Версия " + version + " уже выложена на GitHub.\n\n"
+                        + "Откройте страницу релиза и установите APK вручную.")
+                .setPositiveButton("Открыть Release", (d, which) -> {
+                    prefs.edit().putString("skipped_version", version).apply();
+                    openRelease(url);
+                })
+                .setNegativeButton("Позже", (d, which) -> {
+                    prefs.edit().putString("skipped_version", version).apply();
+                    webView.requestFocus();
+                })
+                .setOnCancelListener(d -> {
+                    prefs.edit().putString("skipped_version", version).apply();
+                    webView.requestFocus();
+                })
+                .create();
+        dialog.show();
+    }
+
+    private void openRelease(String url) {
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            if (intent.resolveActivity(getPackageManager()) != null) {
+                startActivity(intent);
+                return;
+            }
+        } catch (ActivityNotFoundException ignored) {
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Ссылка на обновление")
+                .setMessage(url)
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     private boolean detectTelevision() {
