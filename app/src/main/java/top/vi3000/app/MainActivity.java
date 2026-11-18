@@ -75,6 +75,8 @@ public class MainActivity extends Activity {
                     + "window.lampa_settings=window.lampa_settings||{};"
                     + "window.lampa_settings.disable_features=window.lampa_settings.disable_features||{};"
                     + "window.lampa_settings.disable_features.ads=true;"
+                    + "var q=parseInt(localStorage.getItem('video_quality_default')||'1080',10);"
+                    + "if(isNaN(q)||q>1440)localStorage.setItem('video_quality_default','1080');"
                     + "}catch(e){}})();";
 
     private static final int FILE_CHOOSER_REQUEST = 1001;
@@ -468,6 +470,7 @@ public class MainActivity extends Activity {
                     view.requestFocus();
                 }
                 injectSettingsFocusWatcher(view);
+                injectQualityPatch(view);
                 if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                     view.evaluateJavascript(
                             "(function(){try{return document.body.className+' | player='+localStorage.getItem('player')"
@@ -677,6 +680,40 @@ public class MainActivity extends Activity {
         } finally {
             connection.disconnect();
         }
+    }
+
+    private void injectQualityPatch(WebView view) {
+        String js = "(function(){"
+                + "if(window.__vi3000QualityPatch)return;window.__vi3000QualityPatch=true;"
+                + "function patch(){try{"
+                + "if(!window.Lampa||!Lampa.Player||!Lampa.Player.play||Lampa.Player.__qpatch)return;"
+                + "var original=Lampa.Player.play;"
+                + "Lampa.Player.play=function(data){"
+                + "try{"
+                + "if(data&&data.quality&&typeof data.quality==='object'){"
+                + "var premium=(data.premium_quality||[]).map(String);"
+                + "var keys=Object.keys(data.quality).filter(function(k){"
+                + "var n=parseInt(k,10);var it=data.quality[k];"
+                + "var p=it&&typeof it==='object'&&it.premium;"
+                + "return !isNaN(n)&&n<2160&&premium.indexOf(k)<0"
+                + "&&premium.indexOf(String(n))<0&&!p;"
+                + "}).sort(function(a,b){return parseInt(b,10)-parseInt(a,10);});"
+                + "if(keys.length){"
+                + "var best=keys[0];var it=data.quality[best];"
+                + "var url=(it&&typeof it==='object')?it.url:(typeof it==='string'?it:null);"
+                + "if(url)data.url=url;"
+                + "try{Lampa.Storage.set('video_quality_default',parseInt(best,10));}catch(e){}"
+                + "delete data.premium_start;"
+                + "}"
+                + "}"
+                + "}catch(e){}"
+                + "return original.apply(this,arguments);"
+                + "};"
+                + "Lampa.Player.__qpatch=true;"
+                + "}catch(e){}}"
+                + "patch();setInterval(patch,1000);"
+                + "})();";
+        view.evaluateJavascript(js, null);
     }
 
     private void injectSettingsFocusWatcher(WebView view) {
