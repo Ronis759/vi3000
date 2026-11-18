@@ -199,7 +199,9 @@ public class MainActivity extends Activity {
                     backLongPressPending = true;
                     handler.postDelayed(backLongPressRunnable, 350);
                 }
-            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                return true;
+            }
+            if (event.getAction() == KeyEvent.ACTION_UP) {
                 handler.removeCallbacks(backLongPressRunnable);
                 if (backLongPressHandled) {
                     backLongPressHandled = false;
@@ -207,8 +209,9 @@ public class MainActivity extends Activity {
                     return true;
                 }
                 backLongPressPending = false;
+                onBackPressed();
+                return true;
             }
-            return super.dispatchKeyEvent(event);
         }
         if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -327,15 +330,10 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("Доступно обновление")
                 .setMessage("Версия " + version + " уже выложена на GitHub.\n\n"
-                        + "Можно скачать APK и установить его сразу, "
-                        + "или открыть страницу релиза.")
+                        + "Нажмите «Скачать и установить», чтобы обновиться.")
                 .setPositiveButton("Скачать и установить", (d, which) -> {
                     prefs.edit().putString("skipped_version", version).apply();
                     new UpdateInstaller(this).downloadAndInstall(apkUrl, version);
-                })
-                .setNeutralButton("Открыть страницу", (d, which) -> {
-                    prefs.edit().putString("skipped_version", version).apply();
-                    openRelease(releaseUrl);
                 })
                 .setNegativeButton("Позже", (d, which) -> {
                     prefs.edit().putString("skipped_version", version).apply();
@@ -1211,8 +1209,24 @@ public class MainActivity extends Activity {
             hideCustomView();
             return;
         }
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "(function(){try{"
+                            + "if(window.Lampa&&Lampa.Controller){Lampa.Controller.back();return 'controller';}"
+                            + "return 'none';"
+                            + "}catch(e){return 'error';}})()",
+                    value -> {
+                        if (value != null && value.contains("controller")) {
+                            return;
+                        }
+                        runOnUiThread(() -> {
+                            if (webView.canGoBack()) {
+                                webView.goBack();
+                            } else {
+                                showExitDialog();
+                            }
+                        });
+                    });
             return;
         }
         showExitDialog();
