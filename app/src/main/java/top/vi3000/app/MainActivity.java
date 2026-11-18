@@ -34,6 +34,7 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -46,6 +47,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -59,6 +61,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -66,6 +69,13 @@ public class MainActivity extends Activity {
 
     private static final String TAG = "VI3000";
     private static final String START_URL = "https://vi3000.top/";
+    private static final Pattern APP_JS_PATTERN = Pattern.compile("/app\\.[a-zA-Z0-9]+\\.js");
+    private static final String DISABLE_ADS_JS =
+            "(function(){try{"
+                    + "window.lampa_settings=window.lampa_settings||{};"
+                    + "window.lampa_settings.disable_features=window.lampa_settings.disable_features||{};"
+                    + "window.lampa_settings.disable_features.ads=true;"
+                    + "}catch(e){}})();";
 
     private static final int FILE_CHOOSER_REQUEST = 1001;
     private static final int STORAGE_PERMISSION_REQUEST = 1002;
@@ -398,6 +408,34 @@ public class MainActivity extends Activity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if (uri == null || uri.getHost() == null
+                        || !uri.getHost().equalsIgnoreCase("vi3000.top")) {
+                    return super.shouldInterceptRequest(view, request);
+                }
+                String path = uri.getPath();
+                if (path == null || !APP_JS_PATTERN.matcher(path).matches()) {
+                    return super.shouldInterceptRequest(view, request);
+                }
+                try {
+                    byte[] original = fetchResource(uri.toString());
+                    if (original == null) {
+                        return super.shouldInterceptRequest(view, request);
+                    }
+                    String source = new String(original, StandardCharsets.UTF_8);
+                    byte[] patched = (DISABLE_ADS_JS + source).getBytes(StandardCharsets.UTF_8);
+                    Log.d(TAG, "ads disabled in " + path);
+                    return new WebResourceResponse(
+                            "application/javascript", "utf-8",
+                            new ByteArrayInputStream(patched));
+                } catch (Exception e) {
+                    Log.w(TAG, "JS intercept failed", e);
+                    return super.shouldInterceptRequest(view, request);
+                }
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return handleUri(request.getUrl());
             }
@@ -610,6 +648,37 @@ public class MainActivity extends Activity {
      * Ставим настройки оболочки до запуска скриптов сайта.
      * На ТВ включаем управление пультом, на телефоне/планшете — сенсорный режим Lampa.
      */
+    private byte[] fetchResource(String url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setInstanceFollowRedirects(true);
+        connection.setConnectTimeout(10000);
+        connection.setReadTimeout(20000);
+        connection.setRequestProperty("Accept-Encoding", "identity");
+        if (userAgent != null && !userAgent.isEmpty()) {
+            connection.setRequestProperty("User-Agent", userAgent);
+        }
+        String cookies = CookieManager.getInstance().getCookie(url);
+        if (cookies != null && !cookies.isEmpty()) {
+            connection.setRequestProperty("Cookie", cookies);
+        }
+        try {
+            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                return null;
+            }
+            InputStream input = connection.getInputStream();
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+            input.close();
+            return output.toByteArray();
+        } finally {
+            connection.disconnect();
+        }
+    }
+
     private void injectSettingsFocusWatcher(WebView view) {
         String js = "(function(){"
                 + "if(window.__vi3000SettingsWatcher)return;"
