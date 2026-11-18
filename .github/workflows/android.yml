@@ -24,10 +24,24 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Install SDK packages
+      - name: Prepare Android SDK
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "Android SDK: $SDK_ROOT"
+          ls "$SDK_ROOT/platforms" || true
+
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager не найден — используем предустановленный SDK"
+          else
+            yes | "$SDKMANAGER" --licenses > /dev/null || true
+            if [ ! -d "$SDK_ROOT/platforms/android-35" ]; then
+              "$SDKMANAGER" "platforms;android-35"
+            fi
+            if [ ! -d "$SDK_ROOT/build-tools/35.0.0" ]; then
+              "$SDKMANAGER" "build-tools;35.0.0"
+            fi
+          fi
 
       - name: Restore release keystore
         env:
