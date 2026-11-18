@@ -21,6 +21,16 @@ Android-приложение-оболочка для сайта [vi3000.top](htt
 
 Либо скачайте APK из артефактов последнего запуска **Actions** (раздел Actions → Build APK → Artifacts).
 
+## PWA-версия
+
+Веб-версия лежит в папке `pwa/` и публикуется на GitHub Pages:
+
+**https://ronis759.github.io/vi3000/**
+
+Это полноэкранная оболочка вокруг vi3000.top: иконка на рабочем столе, режим `standalone`, поддержка пульта внутри сайта. Service worker кэширует только саму оболочку — каталог и видео всегда загружаются с vi3000.top.
+
+PWA — дополнение к APK, а не замена. Для ТВ-приставки предпочтительнее APK: в нём нативный плеер, ТВ-баннер и более надёжная работа с пультом.
+
 ## Установка на ТВ-приставку
 
 1. Разрешите установку из неизвестных источников: **Настройки → Безопасность → Неизвестные источники**.
@@ -60,7 +70,8 @@ APK появится в `app/build/outputs/apk/release/app-release.apk`.
 
 ## GitHub Actions
 
-Workflow `.github/workflows/android.yml` собирает APK при каждом пуше в `main`, по тегу `v*` и вручную.
+- `.github/workflows/android.yml` — собирает APK при каждом пуше в `main`, по тегу `v*` и вручную.
+- `.github/workflows/pages.yml` — публикует PWA из папки `pwa/` на GitHub Pages.
 
 Чтобы APK подписывался постоянным ключом, добавьте в **Settings → Secrets and variables → Actions**:
 
@@ -88,5 +99,7 @@ app/src/main/java/top/vi3000/app/
   AndroidBridge.java   — мост AndroidJS для сайта
   PlayerActivity.java  — нативный плеер Media3
 app/src/main/res/      — иконки, ТВ-баннер, экраны
+pwa/                   — PWA-оболочка для GitHub Pages
 tools/make_icons.ps1   — генерация иконок и баннера из brand/logo.png
+tools/make_pwa_icons.ps1 — генерация иконок PWA из brand/logo.png
 ```
