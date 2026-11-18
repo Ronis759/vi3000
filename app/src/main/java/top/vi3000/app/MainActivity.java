@@ -90,6 +90,7 @@ public class MainActivity extends Activity {
     private final Map<Integer, String> httpResponses = new ConcurrentHashMap<>();
     private ExecutorService httpExecutor;
     private String userAgent;
+    private volatile String currentPageUrl = START_URL;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -231,6 +232,9 @@ public class MainActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 mainFrameFailed = false;
+                if (url != null) {
+                    currentPageUrl = url;
+                }
                 hideError();
                 showProgress(5);
                 injectShellSettings(view);
@@ -597,10 +601,11 @@ public class MainActivity extends Activity {
                 httpExecutor = Executors.newFixedThreadPool(4);
             }
             final String requestUserAgent = userAgent;
+            final String baseUrl = currentPageUrl;
             httpExecutor.execute(() -> {
                 HttpResult result;
                 try {
-                    result = executeHttp(json, requestUserAgent);
+                    result = executeHttp(json, requestUserAgent, baseUrl);
                 } catch (Exception e) {
                     Log.w(TAG, "httpReq failed", e);
                     result = HttpResult.error(500, String.valueOf(e.getMessage()));
@@ -633,11 +638,15 @@ public class MainActivity extends Activity {
         return response == null ? "" : response;
     }
 
-    private HttpResult executeHttp(String json, String userAgent) throws Exception {
+    private HttpResult executeHttp(String json, String userAgent, String baseUrl) throws Exception {
         JSONObject params = new JSONObject(json);
         String url = params.optString("url", "");
         if (url.isEmpty()) {
             return HttpResult.error(404, "Empty url");
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            String base = baseUrl == null || baseUrl.isEmpty() ? START_URL : baseUrl;
+            url = new URL(new URL(base), url).toString();
         }
 
         String method = params.optString("type", params.has("post_data") ? "POST" : "GET")
