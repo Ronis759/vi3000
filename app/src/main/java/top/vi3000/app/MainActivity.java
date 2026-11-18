@@ -112,6 +112,12 @@ public class MainActivity extends Activity {
             showAppMenu();
         }
     };
+    private boolean backLongPressPending;
+    private boolean backLongPressHandled;
+    private final Runnable backLongPressRunnable = () -> {
+        backLongPressHandled = true;
+        showExitDialog();
+    };
     private boolean forceUpdateForTest;
 
     /** Ответы нативного HTTP-моста для Lampa: индекс запроса → тело ответа. */
@@ -187,6 +193,23 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (!backLongPressPending) {
+                    backLongPressPending = true;
+                    handler.postDelayed(backLongPressRunnable, 350);
+                }
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                handler.removeCallbacks(backLongPressRunnable);
+                if (backLongPressHandled) {
+                    backLongPressHandled = false;
+                    backLongPressPending = false;
+                    return true;
+                }
+                backLongPressPending = false;
+            }
+            return super.dispatchKeyEvent(event);
+        }
         if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 if (settingsFocused && !centerLongPressPending) {
@@ -1192,6 +1215,10 @@ public class MainActivity extends Activity {
             webView.goBack();
             return;
         }
+        showExitDialog();
+    }
+
+    private void showExitDialog() {
         new AlertDialog.Builder(this)
                 .setTitle(R.string.exit_title)
                 .setMessage(R.string.exit_text)
