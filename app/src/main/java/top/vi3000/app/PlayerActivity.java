@@ -104,6 +104,7 @@ public class PlayerActivity extends Activity {
                 .build();
         player.setHandleAudioBecomingNoisy(true);
         playerView.setPlayer(player);
+        playerView.requestFocus();
 
         player.addListener(new Player.Listener() {
             @Override

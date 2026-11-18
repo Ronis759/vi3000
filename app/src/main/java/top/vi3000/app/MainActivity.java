@@ -153,16 +153,22 @@ public class MainActivity extends Activity {
     }
 
     private boolean detectTelevision() {
-        int uiMode = getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_TYPE_MASK;
+        Configuration configuration = getResources().getConfiguration();
+        int uiMode = configuration.uiMode & Configuration.UI_MODE_TYPE_MASK;
         if (uiMode == Configuration.UI_MODE_TYPE_TELEVISION) {
             return true;
         }
-        boolean leanback = getPackageManager()
-                .hasSystemFeature(PackageManager.FEATURE_LEANBACK);
-        boolean touch = getPackageManager()
-                .hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN);
-        return leanback && !touch;
+        PackageManager manager = getPackageManager();
+        if (manager.hasSystemFeature("android.hardware.type.television")) {
+            return true;
+        }
+        boolean leanback = manager.hasSystemFeature(PackageManager.FEATURE_LEANBACK);
+        boolean touch = manager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN);
+        if (touch) {
+            return false;
+        }
+        int screenLayout = configuration.screenLayout & Configuration.SCREENLAYOUT_SIZE_MASK;
+        return leanback || screenLayout >= Configuration.SCREENLAYOUT_SIZE_LARGE;
     }
 
     private void configureWebView() {
@@ -236,6 +242,9 @@ public class MainActivity extends Activity {
                 swipe.setRefreshing(false);
                 if (!mainFrameFailed) {
                     hideError();
+                }
+                if (isTelevision) {
+                    view.requestFocus();
                 }
                 if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                     view.evaluateJavascript(
