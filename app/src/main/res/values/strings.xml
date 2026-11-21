@@ -18,4 +18,5 @@
 
     <string name="player_error">Не удалось воспроизвести видео</string>
     <string name="player_retry">Повторить</string>
+    <string name="player_source_unsuitable">Не удалось получить картинку.\nЭтот источник не подходит для этой приставки.\nВыберите другой источник или серию.</string>
 </resources>

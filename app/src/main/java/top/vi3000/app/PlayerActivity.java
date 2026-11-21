@@ -5,6 +5,9 @@ import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
@@ -17,6 +20,7 @@ import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.PlayerView;
@@ -37,6 +41,37 @@ public class PlayerActivity extends Activity {
 
     private static final String TAG = "VI3000Player";
 
+    /** Сколько ждём первый кадр, прежде чем перезапустить поток. */
+    private static final long STALL_TIMEOUT_MS = 15000;
+    private static final int MAX_AUTO_RETRIES = 1;
+
+    private final Handler watchdog = new Handler(Looper.getMainLooper());
+    private int autoRetries;
+
+    private final Runnable stallCheck = new Runnable() {
+        @Override
+        public void run() {
+            if (player == null) {
+                return;
+            }
+            int state = player.getPlaybackState();
+            if (state == Player.STATE_READY || state == Player.STATE_ENDED) {
+                return;
+            }
+            if (state != Player.STATE_BUFFERING) {
+                watchdog.postDelayed(this, STALL_TIMEOUT_MS);
+                return;
+            }
+            if (autoRetries < MAX_AUTO_RETRIES) {
+                autoRetries++;
+                Log.w(TAG, "playback stalled, retry " + autoRetries);
+                prepare();
+            } else {
+                showErrorText(getString(R.string.player_source_unsuitable));
+            }
+        }
+    };
+
     private ExoPlayer player;
     private PlayerView playerView;
     private View errorView;
@@ -56,6 +91,7 @@ public class PlayerActivity extends Activity {
         Button retry = findViewById(R.id.player_retry);
         retry.setOnClickListener(v -> {
             hideError();
+            autoRetries = 0;
             prepare();
         });
 
@@ -99,7 +135,11 @@ public class PlayerActivity extends Activity {
 
         DefaultMediaSourceFactory mediaSourceFactory = new DefaultMediaSourceFactory(httpFactory);
 
+        DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this)
+                .setEnableDecoderFallback(true);
+
         player = new ExoPlayer.Builder(this)
+                .setRenderersFactory(renderersFactory)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .build();
         player.setHandleAudioBecomingNoisy(true);
@@ -111,11 +151,13 @@ public class PlayerActivity extends Activity {
             public void onPlaybackStateChanged(int playbackState) {
                 if (playbackState == Player.STATE_READY) {
                     hideError();
+                    watchdog.removeCallbacks(stallCheck);
                 }
             }
 
             @Override
             public void onPlayerError(PlaybackException error) {
+                watchdog.removeCallbacks(stallCheck);
                 showError(error);
             }
         });
@@ -125,11 +167,13 @@ public class PlayerActivity extends Activity {
         if (player == null) {
             return;
         }
+        watchdog.removeCallbacks(stallCheck);
+        hideError();
         String lower = url.toLowerCase(Locale.ROOT);
         MediaItem.Builder builder = new MediaItem.Builder().setUri(Uri.parse(url));
-        if (lower.contains(".m3u8")) {
+        if (lower.contains(".m3u8") || lower.contains("m3u8")) {
             builder.setMimeType(MimeTypes.APPLICATION_M3U8);
-        } else if (lower.contains(".mpd")) {
+        } else if (lower.contains(".mpd") || lower.contains("manifest.mpd")) {
             builder.setMimeType(MimeTypes.APPLICATION_MPD);
         }
         String title = getIntent().getStringExtra(EXTRA_TITLE);
@@ -139,6 +183,7 @@ public class PlayerActivity extends Activity {
         player.setMediaItem(builder.build());
         player.setPlayWhenReady(true);
         player.prepare();
+        watchdog.postDelayed(stallCheck, STALL_TIMEOUT_MS);
     }
 
     private static String originOf(String url) {
@@ -155,10 +200,14 @@ public class PlayerActivity extends Activity {
     }
 
     private void showError(PlaybackException error) {
-        errorView.setVisibility(View.VISIBLE);
         String details = error == null ? "" : error.getErrorCodeName();
-        errorText.setText(getString(R.string.player_error)
+        showErrorText(getString(R.string.player_error)
                 + (details.isEmpty() ? "" : "\n" + details));
+    }
+
+    private void showErrorText(String text) {
+        errorView.setVisibility(View.VISIBLE);
+        errorText.setText(text);
     }
 
     private void hideError() {
@@ -175,6 +224,7 @@ public class PlayerActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        watchdog.removeCallbacks(stallCheck);
         if (player != null) {
             player.release();
             player = null;

@@ -2,6 +2,7 @@ package top.vi3000.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
@@ -504,6 +505,7 @@ public class MainActivity extends Activity {
                 }
                 injectSettingsFocusWatcher(view);
                 injectQualityPatch(view);
+                injectNavFix(view);
                 if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                     view.evaluateJavascript(
                             "(function(){try{return document.body.className+' | player='+localStorage.getItem('player')"
@@ -715,9 +717,63 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Слабые ТВ-боксы (Android 7.1 и ниже или с малым объёмом памяти) не тянут
+     * воспроизведение внутри WebView: встроенный плеер сайта зависает на
+     * «Загрузке». На таких устройствах поток сразу отдаётся нативному ExoPlayer.
+     */
+    private boolean preferNativePlayback() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.N_MR1) {
+            return true;
+        }
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            try {
+                ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+                if (am != null && am.isLowRamDevice()) {
+                    return true;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return false;
+    }
+
     private void injectQualityPatch(WebView view) {
+        boolean preferNative = preferNativePlayback();
         String js = "(function(){"
                 + "if(window.__vi3000QualityPatch)return;window.__vi3000QualityPatch=true;"
+                + "var NATIVE=" + (preferNative ? "true" : "false") + ";"
+                + "function isTube(u){return /youtu\\.be|youtube\\.com/i.test(String(u||''));}"
+                + "function handoff(data){try{"
+                + "if(!data||!data.url)return false;"
+                + "var u=String(data.url);if(isTube(u))return false;"
+                + "u=u.replace('&preload','&play');"
+                + "if(!window.AndroidJS||!AndroidJS.openPlayer)return false;"
+                + "window.__vi3000Native=true;"
+                + "AndroidJS.openPlayer(u,JSON.stringify({title:data.title||''}));"
+                + "return true;}catch(e){window.__vi3000Native=false;return false;}}"
+                + "function closeSitePlayer(){try{"
+                + "if(window.Lampa&&Lampa.Player&&typeof Lampa.Player.close==='function'"
+                + "&&Lampa.Player.opened&&Lampa.Player.opened())Lampa.Player.close();"
+                + "}catch(e){}}"
+                + "function watch(data){try{"
+                + "if(!data||!data.url||window.__vi3000Native)return;"
+                + "var t0=Date.now();"
+                + "var iv=setInterval(function(){try{"
+                + "if(window.__vi3000Native){clearInterval(iv);return;}"
+                + "var v=document.querySelector('video');"
+                + "var visible=v&&(v.offsetParent!==null||v.getClientRects().length>0);"
+                + "var ok=visible&&(v.currentTime>0.5||(v.readyState>=3&&!v.paused));"
+                + "if(ok){clearInterval(iv);return;}"
+                + "var bad=v&&v.error;"
+                + "if(!bad&&Date.now()-t0<9000)return;"
+                + "clearInterval(iv);"
+                + "try{if(window.Lampa&&Lampa.Noty)Lampa.Noty.show('Переключаю на встроенный плеер…');}catch(e){}"
+                + "try{if(v)v.pause();}catch(e){}"
+                + "if(handoff(data))setTimeout(closeSitePlayer,2000);"
+                + "}catch(e){}},700);"
+                + "setTimeout(function(){clearInterval(iv);},16000);"
+                + "}catch(e){}}"
                 + "function patch(){try{"
                 + "if(!window.Lampa||!Lampa.Player||!Lampa.Player.play||Lampa.Player.__qpatch)return;"
                 + "var original=Lampa.Player.play;"
@@ -740,6 +796,10 @@ public class MainActivity extends Activity {
                 + "delete data.premium_start;"
                 + "}"
                 + "}"
+                + "if(data&&data.url&&!isTube(data.url)){"
+                + "if(NATIVE){if(handoff(data))return;}"
+                + "else watch(data);"
+                + "}"
                 + "}catch(e){}"
                 + "return original.apply(this,arguments);"
                 + "};"
@@ -752,6 +812,72 @@ public class MainActivity extends Activity {
                 + "for(var i=0;i<list.length;i++){if(list[i])list[i].midroll_done=true;}"
                 + "}catch(e){}}"
                 + "patch();markPlaylist();setInterval(patch,1000);setInterval(markPlaylist,1000);"
+                + "})();";
+        view.evaluateJavascript(js, null);
+    }
+
+    /**
+     * На части ТВ-боксов (H96 Max V12 и др.) фокус в списке «Онлайн» залипает
+     * на плашке «Нет истории просмотра» (online-prestige-watched): у неё нет
+     * обработчика hover:enter, поэтому OK заново открывает экран и выбрать
+     * перевод/серию невозможно. Снимаем с неё класс selector/focus и при
+     * нажатии OK на «мёртвом» элементе переносим фокус на ближайший рабочий.
+     */
+    private void injectNavFix(WebView view) {
+        String js = "(function(){"
+                + "if(window.__vi3000NavFix)return;window.__vi3000NavFix=true;"
+                + "function hasEnter(el){try{"
+                + "if(!el||!window.jQuery)return false;"
+                + "var ev=jQuery._data(el,'events');"
+                + "return !!(ev&&ev['hover:enter']&&ev['hover:enter'].length);"
+                + "}catch(e){return false}}"
+                + "function nextReal(f){try{"
+                + "var all=document.querySelectorAll('.selector');var i,el;"
+                + "for(i=0;i<all.length;i++){el=all[i];"
+                + "if(el===f)continue;"
+                + "if(f.compareDocumentPosition(el)&4){"
+                + "if(el.offsetParent!==null&&hasEnter(el))return el;}}"
+                + "for(i=0;i<all.length;i++){el=all[i];"
+                + "if(el===f)continue;"
+                + "if(el.offsetParent!==null&&hasEnter(el))return el;}"
+                + "}catch(e){}return null}"
+                + "function setFocus(t){try{"
+                + "if(window.Lampa&&Lampa.Controller&&Lampa.Controller.collectionFocus){"
+                + "Lampa.Controller.collectionFocus(t,t.parentElement||document.body);"
+                + "}else{t.classList.add('focus');}"
+                + "}catch(e){try{t.classList.add('focus');}catch(x){}}}"
+                + "function stripDead(){try{"
+                + "var rows=document.querySelectorAll('.online-prestige-watched');"
+                + "for(var i=0;i<rows.length;i++){var r=rows[i];"
+                + "if(r.classList.contains('selector'))r.classList.remove('selector');"
+                + "if(r.classList.contains('focus')){"
+                + "var t=nextReal(r);r.classList.remove('focus');"
+                + "if(t)setFocus(t);}}"
+                + "}catch(e){}}"
+                + "function patchEnter(){try{"
+                + "if(!window.Lampa||!Lampa.Controller||Lampa.Controller.__viNavFix)return;"
+                + "var orig=Lampa.Controller.enter;"
+                + "Lampa.Controller.enter=function(){"
+                + "try{"
+                + "var en=null;try{en=Lampa.Controller.enabled();}catch(e){}"
+                + "var nm=en?en.name:'';"
+                + "if(en&&en.controller&&typeof en.controller.enter==='function')return orig.apply(Lampa.Controller,arguments);"
+                + "if(nm!=='content'&&nm!=='full_start')return orig.apply(Lampa.Controller,arguments);"
+                + "var f=document.querySelector('.focus');"
+                + "if(f&&f.offsetParent!==null&&hasEnter(f)){"
+                + "try{jQuery(f).trigger('hover:enter');}catch(e){}"
+                + "return;}"
+                + "if(f){"
+                + "var t=nextReal(f);"
+                + "if(t){try{f.classList.remove('focus');}catch(e){}setFocus(t);return;}"
+                + "if(f.classList.contains('online-prestige-watched'))return;}"
+                + "}catch(e){}"
+                + "return orig.apply(Lampa.Controller,arguments);"
+                + "};"
+                + "Lampa.Controller.__viNavFix=true;"
+                + "}catch(e){}}"
+                + "stripDead();patchEnter();"
+                + "setInterval(function(){stripDead();patchEnter();},800);"
                 + "})();";
         view.evaluateJavascript(js, null);
     }
@@ -1282,6 +1408,10 @@ public class MainActivity extends Activity {
         super.onResume();
         if (webView != null) {
             webView.onResume();
+            // Возврат из нативного плеера: снимаем защиту от повторного запуска,
+            // чтобы следующий фильм снова открылся нормально.
+            webView.evaluateJavascript(
+                    "(function(){try{window.__vi3000Native=false;}catch(e){}})()", null);
         }
     }
 
