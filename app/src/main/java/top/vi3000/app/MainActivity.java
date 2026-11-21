@@ -901,14 +901,15 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * На главном экране сайт показывает своё окно «Выход / Да, выйти / Отменить».
-     * Его кнопки handled-ятся только внутри сайта, поэтому нажимаем «Да, выйти»
-     * через настоящий обработчик сайта, а приложение закрываем из моста.
+     * На главном экране сайт показывает окно «Выход / Да, выйти / Отменить».
+     * Пока просто открыто окно — ничего не делаем. Выход из приложения
+     * происходит только по нажатию «Да, выйти»: на этот пункт вешается
+     * обработчик клика/ввода, который закрывает приложение.
      */
     private void injectSiteExitGuard(WebView view) {
         String js = "(function(){"
                 + "if(window.__vi3000ExitGuard)return;window.__vi3000ExitGuard=true;"
-                + "var busy=false;"
+                + "var exited=false,armed=null;"
                 + "function findItem(words){try{"
                 + "var items=document.querySelectorAll('.selectbox-item, .selector');"
                 + "for(var i=0;i<items.length;i++){var el=items[i];"
@@ -922,31 +923,38 @@ public class MainActivity extends Activity {
                 + "var t=box.innerText.toLowerCase();"
                 + "return t.indexOf('выйти')>=0&&t.indexOf('отмен')>=0;"
                 + "}catch(e){return false;}}"
-                + "function fire(el){try{"
-                + "if(!el)return false;"
-                + "if(window.jQuery&&jQuery._data&&jQuery._data(el,'events')&&jQuery._data(el,'events')['hover:enter']){jQuery(el).trigger('hover:enter');return true;}"
-                + "el.click();return true;}catch(e){return false;}}"
-                + "function quit(){try{"
+                + "function quit(){try{if(exited)return;exited=true;"
                 + "console.error('VIB EXIT выходим из приложения');"
                 + "}catch(e){}"
-                + "try{if(window.AndroidJS&&AndroidJS.onSettingsExit)AndroidJS.onSettingsExit();else if(window.Lampa&&Lampa.App&&Lampa.App.close)Lampa.App.close();}catch(e){}}"
-                + "function check(){try{"
-                + "if(busy)return;"
-                + "if(!exitBoxOpen())return;"
-                + "var yes=findItem(['да, выйти','да,выйти','выйти']);"
-                + "if(!yes||!yes.classList.contains('focus'))return;"
-                + "busy=true;"
-                + "setTimeout(function(){busy=false;},800);"
-                + "var fake=false;"
-                + "var keyEvent=new KeyboardEvent('keydown',{keyCode:13,which:13,code:'Enter',bubbles:true,cancelable:true});"
-                + "try{document.dispatchEvent(keyEvent);}catch(e){}"
-                + "setTimeout(function(){"
-                + "if(exitBoxOpen())fire(yes);"
-                + "setTimeout(function(){if(exitBoxOpen())quit();},700);"
-                + "},400);"
+                + "try{if(window.AndroidJS&&AndroidJS.onSettingsExit)AndroidJS.onSettingsExit();"
+                + "else if(window.Lampa&&Lampa.App&&Lampa.App.close)Lampa.App.close();}catch(e){}}"
+                + "function arm(yes){try{"
+                + "if(armed===yes)return;"
+                + "if(armed&&window.jQuery){jQuery(armed).off('.vi3000exit');}"
+                + "armed=yes;"
+                + "if(!window.jQuery||!jQuery._data)return;"
+                + "jQuery(yes).on('click.vi3000exit',function(e){try{e.stopImmediatePropagation();}catch(x){}quit();return false;})"
+                + ".on('hover:enter.vi3000exit',function(e){try{e.stopImmediatePropagation();}catch(x){}quit();return false;});"
                 + "}catch(e){}}"
-                + "document.addEventListener('keydown',function(){setTimeout(check,80);},true);"
-                + "setInterval(check,250);"
+                + "function check(){try{"
+                + "if(!exitBoxOpen()){armed=null;return;}"
+                + "var yes=findItem(['да, выйти','да,выйти','выйти']);"
+                + "if(yes)arm(yes);"
+                + "}catch(e){}}"
+                + "function patchAppClose(){try{"
+                + "if(!window.Lampa||!Lampa.App||typeof Lampa.App.close!=='function')return false;"
+                + "if(Lampa.App.__vi3000Exit)return true;"
+                + "var o=Lampa.App.close;"
+                + "Lampa.App.close=function(){if(exitBoxOpen())quit();return o.apply(this,arguments);};"
+                + "Lampa.App.__vi3000Exit=true;return true;"
+                + "}catch(e){return false;}}"
+                + "document.addEventListener('keydown',function(){setTimeout(check,20);},true);"
+                + "document.addEventListener('keyup',function(){setTimeout(check,20);},true);"
+                + "document.addEventListener('click',function(){setTimeout(check,20);},true);"
+                + "var obs=new MutationObserver(function(){setTimeout(check,20);});"
+                + "obs.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});"
+                + "setInterval(check,200);"
+                + "if(!patchAppClose())setInterval(patchAppClose,1000);"
                 + "})();";
         view.evaluateJavascript(js, null);
     }
