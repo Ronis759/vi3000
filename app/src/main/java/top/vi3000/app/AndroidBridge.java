@@ -39,7 +39,7 @@ public class AndroidBridge {
     /** Сайт попытался показать своё окно выхода — показываем окно выхода оболочки. */
     @JavascriptInterface
     public void onSettingsExit() {
-        activity.runOnUiThread(activity::showExitDialogFromSite);
+        activity.runOnUiThread(activity::exitFromSite);
     }
 
     @JavascriptInterface

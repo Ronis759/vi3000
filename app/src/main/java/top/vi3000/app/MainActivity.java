@@ -901,50 +901,52 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Сайт на главном экране показывает своё окно «Выход / Да, выйти / Отменить»,
-     * кнопки которого в оболочке не работают. Если оно всё же появилось —
-     * закрываем его и показываем наше окно выхода.
+     * На главном экране сайт показывает своё окно «Выход / Да, выйти / Отменить».
+     * Его кнопки handled-ятся только внутри сайта, поэтому нажимаем «Да, выйти»
+     * через настоящий обработчик сайта, а приложение закрываем из моста.
      */
     private void injectSiteExitGuard(WebView view) {
         String js = "(function(){"
                 + "if(window.__vi3000ExitGuard)return;window.__vi3000ExitGuard=true;"
-                + "function isRoot(){try{"
-                + "if(!window.Lampa||!Lampa.Controller)return false;"
-                + "var name='';try{name=Lampa.Controller.enabled().name||'';}catch(e){}"
-                + "if(name!=='select')return false;"
+                + "var busy=false;"
+                + "function findItem(words){try{"
+                + "var items=document.querySelectorAll('.selectbox-item, .selector');"
+                + "for(var i=0;i<items.length;i++){var el=items[i];"
+                + "if(!el||el.offsetParent===null)continue;"
+                + "var t=(el.innerText||'').replace(/\\s+/g,' ').toLowerCase();"
+                + "for(var j=0;j<words.length;j++){if(t.indexOf(words[j])>=0)return el;}"
+                + "}return null;}catch(e){return null;}}"
+                + "function exitBoxOpen(){try{"
                 + "var box=document.querySelector('.selectbox');"
                 + "if(!box||!box.innerText)return false;"
-                + "var t=box.innerText;"
-                + "return t.indexOf('Выйти')>=0||t.indexOf('да, выйти')>=0;"
+                + "var t=box.innerText.toLowerCase();"
+                + "return t.indexOf('выйти')>=0&&t.indexOf('отмен')>=0;"
                 + "}catch(e){return false;}}"
-                + "function hasRoot(){try{"
-                + "var all=Lampa.Activity.all();"
-                + "if(!all||!all.length)return false;"
-                + "var last=all[all.length-1];"
-                + "return last&&last.component==='content'&&all.length<=1;"
-                + "}catch(e){return false;}}"
-                + "var ran=false;"
+                + "function fire(el){try{"
+                + "if(!el)return false;"
+                + "if(window.jQuery&&jQuery._data&&jQuery._data(el,'events')&&jQuery._data(el,'events')['hover:enter']){jQuery(el).trigger('hover:enter');return true;}"
+                + "el.click();return true;}catch(e){return false;}}"
+                + "function quit(){try{"
+                + "console.error('VIB EXIT выходим из приложения');"
+                + "}catch(e){}"
+                + "try{if(window.AndroidJS&&AndroidJS.onSettingsExit)AndroidJS.onSettingsExit();else if(window.Lampa&&Lampa.App&&Lampa.App.close)Lampa.App.close();}catch(e){}}"
                 + "function check(){try{"
-                + "if(ran)return;"
-                + "if(!isRoot())return;"
-                + "if(!hasRoot())return;"
-                + "ran=true;"
-                + "var cancelEl=null;"
-                + "var items=document.querySelectorAll('.selectbox-item');"
-                + "for(var i=0;i<items.length;i++){"
-                + "if((items[i].innerText||'').indexOf('Отмен')>=0){cancelEl=items[i];break;}}"
-                + "if(!cancelEl&&window.jQuery){"
-                + "var jq=jQuery('.selectbox-item');"
-                + "jq.each(function(){if((this.innerText||'').indexOf('Отмен')>=0)cancelEl=this;});"
-                + "}"
-                + "if(cancelEl){try{jQuery(cancelEl).trigger('hover:enter');}catch(e){cancelEl.click();}}"
-                + "try{console.error('VIB EXITGUARD закрываю окно сайта');}catch(e){}"
-                + "try{if(window.AndroidJS&&AndroidJS.onSettingsExit)AndroidJS.onSettingsExit();}catch(e){}"
-                + "setTimeout(function(){ran=false;},1500);"
+                + "if(busy)return;"
+                + "if(!exitBoxOpen())return;"
+                + "var yes=findItem(['да, выйти','да,выйти','выйти']);"
+                + "if(!yes||!yes.classList.contains('focus'))return;"
+                + "busy=true;"
+                + "setTimeout(function(){busy=false;},800);"
+                + "var fake=false;"
+                + "var keyEvent=new KeyboardEvent('keydown',{keyCode:13,which:13,code:'Enter',bubbles:true,cancelable:true});"
+                + "try{document.dispatchEvent(keyEvent);}catch(e){}"
+                + "setTimeout(function(){"
+                + "if(exitBoxOpen())fire(yes);"
+                + "setTimeout(function(){if(exitBoxOpen())quit();},700);"
+                + "},400);"
                 + "}catch(e){}}"
-                + "document.addEventListener('keydown',function(){setTimeout(check,60);setTimeout(check,260);},true);"
-                + "var obs=new MutationObserver(function(){setTimeout(check,30);});"
-                + "obs.observe(document.documentElement,{childList:true,subtree:true});"
+                + "document.addEventListener('keydown',function(){setTimeout(check,80);},true);"
+                + "setInterval(check,250);"
                 + "})();";
         view.evaluateJavascript(js, null);
     }
@@ -1407,18 +1409,10 @@ public class MainActivity extends Activity {
         if (webView != null) {
             webView.evaluateJavascript(
                     "(function(){try{"
-                            + "if(!window.Lampa||!Lampa.Controller)return 'none';"
-                            + "var name='';try{name=Lampa.Controller.enabled().name||'';}catch(e){}"
-                            + "var levels=0;try{levels=Lampa.Activity.all().length;}catch(e){levels=0;}"
-                            + "if(name==='content'&&levels<=1)return 'root';"
-                            + "Lampa.Controller.back();return 'controller';"
+                            + "if(window.Lampa&&Lampa.Controller){Lampa.Controller.back();return 'controller';}"
+                            + "return 'none';"
                             + "}catch(e){return 'error';}})()",
                     value -> {
-                        if (value != null && value.contains("root")) {
-                            // Главный экран: вместо окна сайта показываем наше окно выхода.
-                            runOnUiThread(this::showExitDialog);
-                            return;
-                        }
                         if (value != null && value.contains("controller")) {
                             return;
                         }
@@ -1435,11 +1429,12 @@ public class MainActivity extends Activity {
         showExitDialog();
     }
 
-    void showExitDialogFromSite() {
+    /** Выход из приложения по кнопке «Да, выйти» в окне сайта. */
+    void exitFromSite() {
         if (isFinishing()) {
             return;
         }
-        showExitDialog();
+        finish();
     }
 
     private void showExitDialog() {

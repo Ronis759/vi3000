@@ -24,8 +24,8 @@ android {
         applicationId = "top.vi3000.app"
         minSdk = 23
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.1.9"
+        versionCode = 13
+        versionName = "1.2.0"
     }
 
     signingConfigs {
