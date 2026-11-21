@@ -56,6 +56,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -70,6 +71,8 @@ public class MainActivity extends Activity {
     private static final String TAG = "VI3000";
     private static final String START_URL = "https://vi3000.top/";
     private static final Pattern APP_JS_PATTERN = Pattern.compile("/app\\.[a-zA-Z0-9]+\\.js");
+    private static final Pattern AD_MEDIA_PATTERN =
+            Pattern.compile("^/video/(midroll|premium-quality)\\.mp4$");
     private static final String DISABLE_ADS_JS =
             "(function(){try{"
                     + "window.lampa_settings=window.lampa_settings||{};"
@@ -438,7 +441,16 @@ public class MainActivity extends Activity {
                     return super.shouldInterceptRequest(view, request);
                 }
                 String path = uri.getPath();
-                if (path == null || !APP_JS_PATTERN.matcher(path).matches()) {
+                if (path == null) {
+                    return super.shouldInterceptRequest(view, request);
+                }
+                if (AD_MEDIA_PATTERN.matcher(path).matches()) {
+                    Log.d(TAG, "ad media blocked: " + path);
+                    return new WebResourceResponse(
+                            "video/mp4", null, 404, "Not Found",
+                            new HashMap<>(), new ByteArrayInputStream(new byte[0]));
+                }
+                if (!APP_JS_PATTERN.matcher(path).matches()) {
                     return super.shouldInterceptRequest(view, request);
                 }
                 try {
@@ -711,6 +723,7 @@ public class MainActivity extends Activity {
                 + "var original=Lampa.Player.play;"
                 + "Lampa.Player.play=function(data){"
                 + "try{"
+                + "if(data)data.midroll_done=true;"
                 + "if(data&&data.quality&&typeof data.quality==='object'){"
                 + "var premium=(data.premium_quality||[]).map(String);"
                 + "var keys=Object.keys(data.quality).filter(function(k){"
@@ -732,7 +745,13 @@ public class MainActivity extends Activity {
                 + "};"
                 + "Lampa.Player.__qpatch=true;"
                 + "}catch(e){}}"
-                + "patch();setInterval(patch,1000);"
+                + "function markPlaylist(){try{"
+                + "if(!window.Lampa||!Lampa.PlayerPlaylist||!Lampa.PlayerPlaylist.get)return;"
+                + "var list=Lampa.PlayerPlaylist.get();"
+                + "if(!list||!list.length)return;"
+                + "for(var i=0;i<list.length;i++){if(list[i])list[i].midroll_done=true;}"
+                + "}catch(e){}}"
+                + "patch();markPlaylist();setInterval(patch,1000);setInterval(markPlaylist,1000);"
                 + "})();";
         view.evaluateJavascript(js, null);
     }
