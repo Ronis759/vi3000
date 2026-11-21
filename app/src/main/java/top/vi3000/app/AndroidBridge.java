@@ -36,6 +36,12 @@ public class AndroidBridge {
         activity.setSettingsFocus(focused);
     }
 
+    /** Сайт попытался показать своё окно выхода — показываем окно выхода оболочки. */
+    @JavascriptInterface
+    public void onSettingsExit() {
+        activity.runOnUiThread(activity::showExitDialogFromSite);
+    }
+
     @JavascriptInterface
     public String getResp(int index) {
         return activity.takeHttpResponse(index);

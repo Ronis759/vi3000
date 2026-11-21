@@ -506,6 +506,7 @@ public class MainActivity extends Activity {
                 injectSettingsFocusWatcher(view);
                 injectQualityPatch(view);
                 injectNavFix(view);
+                injectSiteExitGuard(view);
                 if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                     view.evaluateJavascript(
                             "(function(){try{return document.body.className+' | player='+localStorage.getItem('player')"
@@ -895,6 +896,55 @@ public class MainActivity extends Activity {
                 + "var obs=new MutationObserver(report);"
                 + "obs.observe(document.documentElement,{attributes:true,subtree:true,attributeFilter:['class']});"
                 + "setInterval(report,600);report();"
+                + "})();";
+        view.evaluateJavascript(js, null);
+    }
+
+    /**
+     * Сайт на главном экране показывает своё окно «Выход / Да, выйти / Отменить»,
+     * кнопки которого в оболочке не работают. Если оно всё же появилось —
+     * закрываем его и показываем наше окно выхода.
+     */
+    private void injectSiteExitGuard(WebView view) {
+        String js = "(function(){"
+                + "if(window.__vi3000ExitGuard)return;window.__vi3000ExitGuard=true;"
+                + "function isRoot(){try{"
+                + "if(!window.Lampa||!Lampa.Controller)return false;"
+                + "var name='';try{name=Lampa.Controller.enabled().name||'';}catch(e){}"
+                + "if(name!=='select')return false;"
+                + "var box=document.querySelector('.selectbox');"
+                + "if(!box||!box.innerText)return false;"
+                + "var t=box.innerText;"
+                + "return t.indexOf('Выйти')>=0||t.indexOf('да, выйти')>=0;"
+                + "}catch(e){return false;}}"
+                + "function hasRoot(){try{"
+                + "var all=Lampa.Activity.all();"
+                + "if(!all||!all.length)return false;"
+                + "var last=all[all.length-1];"
+                + "return last&&last.component==='content'&&all.length<=1;"
+                + "}catch(e){return false;}}"
+                + "var ran=false;"
+                + "function check(){try{"
+                + "if(ran)return;"
+                + "if(!isRoot())return;"
+                + "if(!hasRoot())return;"
+                + "ran=true;"
+                + "var cancelEl=null;"
+                + "var items=document.querySelectorAll('.selectbox-item');"
+                + "for(var i=0;i<items.length;i++){"
+                + "if((items[i].innerText||'').indexOf('Отмен')>=0){cancelEl=items[i];break;}}"
+                + "if(!cancelEl&&window.jQuery){"
+                + "var jq=jQuery('.selectbox-item');"
+                + "jq.each(function(){if((this.innerText||'').indexOf('Отмен')>=0)cancelEl=this;});"
+                + "}"
+                + "if(cancelEl){try{jQuery(cancelEl).trigger('hover:enter');}catch(e){cancelEl.click();}}"
+                + "try{console.error('VIB EXITGUARD закрываю окно сайта');}catch(e){}"
+                + "try{if(window.AndroidJS&&AndroidJS.onSettingsExit)AndroidJS.onSettingsExit();}catch(e){}"
+                + "setTimeout(function(){ran=false;},1500);"
+                + "}catch(e){}}"
+                + "document.addEventListener('keydown',function(){setTimeout(check,60);setTimeout(check,260);},true);"
+                + "var obs=new MutationObserver(function(){setTimeout(check,30);});"
+                + "obs.observe(document.documentElement,{childList:true,subtree:true});"
                 + "})();";
         view.evaluateJavascript(js, null);
     }
@@ -1357,10 +1407,18 @@ public class MainActivity extends Activity {
         if (webView != null) {
             webView.evaluateJavascript(
                     "(function(){try{"
-                            + "if(window.Lampa&&Lampa.Controller){Lampa.Controller.back();return 'controller';}"
-                            + "return 'none';"
+                            + "if(!window.Lampa||!Lampa.Controller)return 'none';"
+                            + "var name='';try{name=Lampa.Controller.enabled().name||'';}catch(e){}"
+                            + "var levels=0;try{levels=Lampa.Activity.all().length;}catch(e){levels=0;}"
+                            + "if(name==='content'&&levels<=1)return 'root';"
+                            + "Lampa.Controller.back();return 'controller';"
                             + "}catch(e){return 'error';}})()",
                     value -> {
+                        if (value != null && value.contains("root")) {
+                            // Главный экран: вместо окна сайта показываем наше окно выхода.
+                            runOnUiThread(this::showExitDialog);
+                            return;
+                        }
                         if (value != null && value.contains("controller")) {
                             return;
                         }
@@ -1372,6 +1430,13 @@ public class MainActivity extends Activity {
                             }
                         });
                     });
+            return;
+        }
+        showExitDialog();
+    }
+
+    void showExitDialogFromSite() {
+        if (isFinishing()) {
             return;
         }
         showExitDialog();
