@@ -20,8 +20,10 @@ import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.LoadControl;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.PlayerView;
 
@@ -138,9 +140,15 @@ public class PlayerActivity extends Activity {
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this)
                 .setEnableDecoderFallback(true);
 
+        LoadControl loadControl = new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(15000, 30000, 1000, 2000)
+                .setTargetBufferBytes(20 * 1024 * 1024)
+                .build();
+
         player = new ExoPlayer.Builder(this)
                 .setRenderersFactory(renderersFactory)
                 .setMediaSourceFactory(mediaSourceFactory)
+                .setLoadControl(loadControl)
                 .build();
         player.setHandleAudioBecomingNoisy(true);
         playerView.setPlayer(player);

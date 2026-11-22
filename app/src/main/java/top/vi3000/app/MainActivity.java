@@ -1082,10 +1082,49 @@ public class MainActivity extends Activity {
         if (referer != null) {
             intent.putExtra(PlayerActivity.EXTRA_REFERER, referer);
         }
+        // Освобождаем память перед нативным плеером: на боксах с 1 ГБ RAM
+        // WebView со страницей сайта держит ~230 МБ, и система убивает процесс,
+        // когда плеер начинает буферизировать видео.
+        freeMemoryForPlayer();
         try {
             startActivity(intent);
         } catch (ActivityNotFoundException e) {
             toast(R.string.app_not_found);
+        }
+    }
+
+    private boolean webViewPaused;
+
+    /**
+     * Перед запуском нативного плеера полностью останавливаем WebView:
+     * останавливаем таймеры, выгружаем кэш картинок и очищаем память.
+     * Возврат в {@link #releaseWebViewForPlayer()} из onResume.
+     */
+    private void freeMemoryForPlayer() {
+        if (webView == null) {
+            return;
+        }
+        try {
+            webView.stopLoading();
+            webView.clearCache(false);
+            webView.freeMemory();
+            webView.onPause();
+            webView.pauseTimers();
+            webViewPaused = true;
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void resumeWebViewAfterPlayer() {
+        if (webView == null || !webViewPaused) {
+            return;
+        }
+        webViewPaused = false;
+        try {
+            webView.resumeTimers();
+            webView.onResume();
+            webView.clearCache(false);
+        } catch (Exception ignored) {
         }
     }
 
@@ -1475,6 +1514,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (webView != null) {
+            resumeWebViewAfterPlayer();
             webView.onResume();
             // Возврат из нативного плеера: снимаем защиту от повторного запуска,
             // чтобы следующий фильм снова открылся нормально.
